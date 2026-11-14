@@ -13,7 +13,3 @@ try:
     print(f"\nTotal: {len(tokens)} tokens")
 except LexicalError as e:
     print(f"Error: {e}")
-
-if 23 in []:
-    pass
-a = 23
