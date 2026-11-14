@@ -40,13 +40,15 @@ class Program: #Este no pertenece a la estructura del arbol en si, es el program
         self.objects = objects 
 
 class Context: # Guardara todas las variables que existen y su valor si ya fueron asignadas
-    def __init__(self, variables: dict):
-        self.variables = variables
+    def __init__(self, variables_type: dict, variables_value: dict):
+        self.variables_type = variables_type # Clave(nombre de la variable) : valor(tipo de su ultima assign o 'any' en caso de
+                                            # haber cambiado de tipo durante la ejecucion del programa
+        self.variables_value = variables_value # Clave(nombre de la variable) : valor(ultima asignacion)
 
 
 class Node(ABC): #Clase abstracta
     @abstractmethod
-    def check(self):
+    def check(self, context: Context):
         pass
     
     def draw(self, indent=0):
