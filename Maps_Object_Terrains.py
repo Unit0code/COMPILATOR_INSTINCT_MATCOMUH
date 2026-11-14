@@ -1,4 +1,4 @@
-# Archivo que manejara los mapas, objetos y Terrenos
+# Archivo que manejará los mapas, objetos y Terrenos
 
 class Map:
     pass
