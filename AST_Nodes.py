@@ -125,9 +125,13 @@ class Creature(Node):
             elif statement.__class__.__name__ == 'Assign' and statement.variable.__class__.__name__ == 'Variable':
                 context.variables_created.add(statement.variable.name)
 
-        for statement in self.statements: #Ahora si checkear todas las instrucciones
-            if statement.__class__.__name__ != 'Label':
-                statement.check(context) 
+        for idx in range(len(self.statements)): #Ahora si checkear todas las instrucciones
+            if idx == 0 and self.statements[idx].__class__.__name__ != 'Label': # Ver si el primer label es start
+                raise ParseError(self.statements[idx].location, 'First part of the body have to be Label "start:"')
+            if idx == 0 and self.statements[idx].name != 'start':
+                raise ParseError(self.statements[idx].location, 'First part of the body have to be Label "start:"')
+            if self.statements[idx].__class__.__name__ != 'Label':
+                self.statements[idx].check(context) 
 
     def draw(self): # Esto es para printear todo el arbol AST de la criatura
         self.heather.draw()
