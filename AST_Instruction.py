@@ -1,8 +1,8 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from Errors import Location
-from AST_Nodes import Node
-from AST_Expression import Ident, Variable, Number, Text, BinaryExpression, UnaryExpression
+from Errors import Location, SemanticError
+from AST_Nodes import Node, Context
+from AST_Expression import Ident, Variable, Number, Text, BinaryExpression, UnaryExpression, Expression
 
 # Los Nodos de Instruction
 class Instruction(Node): # Clase abstracta, No se instancia
@@ -11,13 +11,17 @@ class Instruction(Node): # Clase abstracta, No se instancia
         pass # No se implementa
 
 class Assign(Instruction):
-    def __init__(self, location: Location, variable: Variable, value: Number | Text | Variable):
+    def __init__(self, location: Location, variable: Variable, value: Expression):
         super().__init__(location)
         self.variable = variable
         self.value = value
     
-    def check(self):
-        pass # Implementar, me parece que no debe de hacer bada
+    def check(self, context: Context):
+
+        if not isinstance(self.variable, Variable): # Para verificar que no se le este asignado algo a una Perception o Constant
+            raise SemanticError(self.location, f"Cannot assign to read-only identifier '{self.variable.name}'.")
+
+        self.value.check(context) #Revisamos que este semanticamente en orden
 
     def execute(self):
         pass # Implementar, hacerle a la expression evaluate() 
@@ -34,24 +38,27 @@ class IfGoto(Instruction):
         self.condition = condition
         self.goto = goto
     
-    def check(self):
-        pass # Implementar
+    def check(self, context: Context): # Solo se verifica que sus hijos esten bien
+        self.condition.check(context)
+        self.goto.check(context)
     
     def execute(self):
-        pass # Implementar, necesitas program counter
+        pass # Implementar, necesitas program counter y los "" y 0 son como false, ojo
 
     def draw(self, indent=0):
         prefix = "  " * indent
-        print(f"{prefix}└─ IfGoto (salta a '{self.goto}')")
+        print(f"{prefix}└─ IfGoto (salta a '{self.goto.label}')")
         self.condition.draw(indent + 1)
+        self.goto.draw(indent + 1)
 
 class GoTo(Instruction):
-    def __init__(self, location: Location, label: str): # Ojo, el parser no detecta si label existe hasta no haber recorrido todo el archivo, por tanto mejor pasarle un str al goto, y kuego semanticamente revisar si el label existe
+    def __init__(self, location: Location, label: str):
         super().__init__(location)
         self.label = label
     
-    def check(self):
-        pass # Implementar, verificar que lo sigte a el es un label de verdad
+    def check(self, context: Context): 
+        if self.label not in context.labels: # Si el label todavia no se ha creado
+            raise SemanticError(self.location, f"Label '{self.label}' does not exist.")
     
     def execute(self):
         pass # Implementar, recibe
@@ -68,8 +75,12 @@ class Label(Instruction):
     def execute(self, program_counter: list):
         pass
 
-    def check(self):
-        pass
+    def check(self, context: Context):
+        
+        if self.name in context.labels: #Verificar si ya existe el label
+            raise SemanticError(self.location, f"Duplicate label '{self.name}'.")
+        
+        context.labels.add(self.name) #Si no existe, lo agrega
 
     def draw(self, indent=0):
         prefix = "  " * indent
@@ -84,8 +95,10 @@ class Wait(Action):
         super().__init__(location)
         self.time = time
     
-    def check(self):
-        pass # Implementar
+    def check(self, context: Context):
+        tipo = self.time.check(context) # Veo el tipo que recibio
+        if tipo not in ('int', 'variable'): # Si no es un entero o un desconocido, da error
+            raise SemanticError(self.location, f"Action 'wait' expects a number, but got '{tipo}'.")
     
     def execute(self):
         pass # Implementar
@@ -96,14 +109,19 @@ class Wait(Action):
         self.time.draw(indent + 1)
 
 class Move(Action):
-    def __init__(self, location: Location, dx: Number | Ident, dy: Number | Ident, howmuch: Number | Ident):
+    def __init__(self, location: Location, dx: Number | Ident, dy: Number | Ident, speed: Number | Ident):
         super().__init__(location)
         self.dx = dx
         self.dy = dy
-        self.howmuch = howmuch
+        self.speed = speed
 
-    def check(self):
-        pass # Implementar, hara falta?
+    def check(self, context: Context): # Verifica que cada uno sea 'int'
+        if self.dx.check(context) == 'str':
+            raise SemanticError(self.location, f"Action 'move' expects a number for dx.")
+        if self.dy.check(context) == 'str':
+            raise SemanticError(self.location, f"Action 'move' expects a number for dy.")
+        if self.speed.check(context) == 'str':
+            raise SemanticError(self.location, f"Action 'move' expects a number for speed.")
 
     def execute(self):
         pass # Implementar
@@ -113,7 +131,7 @@ class Move(Action):
         print(f"{prefix}└─ Move")
         self.dx.draw(indent + 1)
         self.dy.draw(indent + 1)
-        self.howmuch.draw(indent + 1)
+        self.speed.draw(indent + 1)
 
 class Attack(Action):
 
@@ -123,8 +141,13 @@ class Attack(Action):
         self.dy = dy
         self.damage = damage
 
-    def check(self):
-        pass # Implementar, no se si sea necesario
+    def check(self, context: Context):
+        if self.dx.check(context) == 'str': # Verifica que cada uno sea 'int'
+            raise SemanticError(self.location, "Action 'attack' expects a number for dx.")
+        if self.dy.check(context) == 'str':
+            raise SemanticError(self.location, "Action 'attack' expects a number for dy.")
+        if self.damage.check(context) == 'str':
+            raise SemanticError(self.location, "Action 'attack' expects a number for damage.")
     
     def execute(self):
         pass
@@ -138,14 +161,19 @@ class Attack(Action):
     
 class Reproduce(Action):
 
-    def __init__(self, location: Location, dx: Number | Ident, dy: Number | Ident, heal: Number | Ident):
+    def __init__(self, location: Location, dx: Number | Ident, dy: Number | Ident, health: Number | Ident):
         super().__init__(location)
         self.dx = dx
         self.dy = dy
-        self.heal = heal
+        self.health = health
 
-    def check(self):
-        pass # Implementar, nose
+    def check(self, context: Context): # Verifica que cada uno sea 'int'
+        if self.dx.check(context) == 'str':
+            raise SemanticError(self.location, "Action 'reproduce' expects a number for dx.")
+        if self.dy.check(context) == 'str':
+            raise SemanticError(self.location, "Action 'reproduce' expects a number for dy.")
+        if self.health.check(context) == 'str':
+            raise SemanticError(self.location, "Action 'reproduce' expects a number for health.")
     
     def execute(self):
         pass
@@ -155,7 +183,7 @@ class Reproduce(Action):
         print(f"{prefix}└─ Reproduce")
         self.dx.draw(indent + 1)
         self.dy.draw(indent + 1)
-        self.heal.draw(indent + 1)
+        self.health.draw(indent + 1)
     
 class Consume(Action):
     def __init__(self, location: Location, dx: Number | Ident, dy: Number | Ident, damage :  Number | Ident, heal: Number | Ident):    
@@ -165,8 +193,15 @@ class Consume(Action):
         self.damage = damage
         self.heal = heal
     
-    def check(self):
-        pass # Implementar
+    def check(self, context: Context):
+        if self.dx.check(context) == 'str': # Verifica que cada uno sea 'int'
+            raise SemanticError(self.location, "Action 'consume' expects a number for dx.")
+        if self.dy.check(context) == 'str':
+            raise SemanticError(self.location, "Action 'consume' expects a number for dy.")
+        if self.damage.check(context) == 'str':
+            raise SemanticError(self.location, "Action 'consume' expects a number for damage.")  
+        if self.heal.check(context) == 'str':
+            raise SemanticError(self.location, "Action 'consume' expects a number for heal.")
     
     def execute(self):
         pass # Implementar
@@ -180,12 +215,12 @@ class Consume(Action):
         self.heal.draw(indent + 1)
 
 class Roar(Action):
-    def __init__(self, location: Location, Text: Text | Ident):
+    def __init__(self, location: Location, text: Expression):
         super().__init__(location)
-        self.text = Text
+        self.text = text
     
-    def check(self):
-        pass # Implementar
+    def check(self, context: Context): # Basta con verificar que su expression recibida es valida
+        self.text.check(context)
     
     def execute(self):
         pass # Implementar
@@ -196,12 +231,12 @@ class Roar(Action):
         self.text.draw(indent + 1)
 
 class Say(Action):
-    def __init__(self, location: Location, text: Text):
+    def __init__(self, location: Location, text: Expression):
         super().__init__(location)
         self.text = text
     
-    def check(self):
-        pass # Implementar
+    def check(self, context: Context): # Basta con verificar que su expression recibida es valida
+        self.text.check(context)
     
     def execute(self):
         pass # implementar

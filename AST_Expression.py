@@ -66,8 +66,9 @@ class Ident(Expression): #Clase abstracta de las variables, constantes y percepc
         print(f"{prefix}└─ {self.__class__.__name__}({self.name})")
 
 class Constant(Ident):
-    def __init__(self, location: Location, name: str, value = None):
-        super().__init__(location, name, value)
+
+    def __init__(self, location: Location, name: str):
+        super().__init__(location, name, None)
         self.value = self.assign(name) # Como es una constante, tiene un valor segun el npombre
     
     def check(self, context: Context) -> str:
@@ -84,9 +85,10 @@ class Variable(Ident): # Variable
     # No se implementara __init__ porque es el mismo que el del padre
     
     def check(self, context: Context) -> str:
-        if self.name not in context.variables_type:
-            raise SemanticError(self.location, f"Variable '{self.name}' used before assignment.")
-        return context.variables_type[self.name]
+        
+        if self.name not in context.variables_created: # Vrificamos si en algun momento ha sido creada
+            raise SemanticError(self.location, f"Variable '{self.name}' is used but never assigned in the program.")
+        return 'variable'
     
     def evaluate(self):
         pass # Implementar
@@ -110,7 +112,7 @@ class Perception(Ident):
 
 class BinaryExpression(Expression): # Clase Abstracta, no se Instancia
     symbol = ''
-    def __init__(self, location: Location, left, right): #left y right puede ser
+    def __init__(self, location: Location, left: Expression, right: Expression): #left y right puede ser
         super().__init__(location)  # Number, Ident, Binary expresin, etc
         self.left = left
         self.right = right
@@ -131,10 +133,10 @@ class Arithmetic(BinaryExpression): # Clase abstracta, no se instancia
         left_type = self.left.check(context) # Verifica los tipos y si estan correctos sus operandos
         right_type = self.right.check(context)
 
-        if left_type not in ('int', 'any'): # Si no es entero, o any, que se emplea para cuando una variable fue aginada con dos valores distintos
+        if left_type not in ('int', 'variable'): # Si no es entero, o any, que se emplea para cuando una variable fue aginada con dos valores distintos
             raise SemanticError(self.location,f"Operator '{self.symbol}' expects a number on the left, but got '{left_type}'.")
         
-        if right_type not in ('int', 'any'):
+        if right_type not in ('int', 'variable'):
             raise SemanticError(self.location, f"Operator '{self.symbol}' expects a number on the right, but got '{right_type}'.")
 
         return 'int'
@@ -170,18 +172,18 @@ class Mod(Arithmetic):
 class Comparison(BinaryExpression): # Clase abstacta, no se instancia
     
     def check(self, context: Context) -> str:
-        left_type = self.left.check(context) #Verificamos que sus lados esten bien
+        
+        left_type = self.left.check(context)
         right_type = self.right.check(context)
 
-        if left_type == 'any' or right_type == 'any': #Si alguno de los tipos no esta claro, los acepta, ya dara RuntimeError si estan mal
-            return 'int'
-        
-        if left_type != right_type: # Si son distintso, no se puede realizar
-            raise SemanticError( self.location,f"Cannot compare '{left_type}' with '{right_type}'.")
-        
-        if left_type == 'str' and self.symbol in ('<', '<=', '>', '>='):
-            raise SemanticError( self.location, f"Operator '{self.symbol}' only accepts numbers, not text.")
-        
+        if self.symbol in ('<', '<=', '>', '>='): # Esto es por si hay un texto en una operacion de numeros
+            if left_type == 'str' or right_type == 'str':
+                raise SemanticError(self.location, f"Operator '{self.symbol}' only accepts numbers, not text.")
+
+        if {left_type, right_type} == {'int', 'str'}: # Si existe una mezcla de tipos conocidos, lanza error, si es alguno o ambos variables, entonces dejalo pasar
+            raise SemanticError(self.location, f"Cannot compare '{left_type}' with '{right_type}'.")
+
+        # Si llego a aca entonces o hay variables involucradas, o es el mismo tipo
         return 'int'
     
     def evaluate(self):
@@ -240,8 +242,8 @@ class And(Logical):
     # El check lo implementa Binary Expression y el evaluate Logical
 
 class UnaryExpression(Expression): #Clase abstracta, no se instancia
-    simbol = ''
-    def __init__(self, location: Location, value: Number | Ident):
+    symbol = ''
+    def __init__(self, location: Location, value: Expression):
         super().__init__(location)
         self.value = value
     
@@ -267,14 +269,14 @@ class Neg(UnaryExpression): # Entero negativo
 
     def check(self, context: Context) -> str:
         tipo_operando = self.value.check(context)
-        if tipo_operando not in ('int', 'any'):
+        if tipo_operando == 'str':
             raise SemanticError(self.location, "Unary operator '-' only accepts numbers.")
         return 'int'
     
     # el evaluate lo implementa Unary Expression 
 
 class FuncCall(Expression): # Clase Abstracta, no Instanciar 
-    def __init__(self, location: Location, x_value: Number | Ident, y_value: Number | Ident):
+    def __init__(self, location: Location, x_value: Expression, y_value: Expression):
         super().__init__(location)
         self.x_value = x_value
         self.y_value = y_value
@@ -284,8 +286,8 @@ class FuncCall(Expression): # Clase Abstracta, no Instanciar
         x_type = self.x_value.check(context) # Vemos para las coordenadas
         y_type = self.y_value.check(context)
         
-        if x_type not in ('int', 'any') or y_type not in ('int', 'any'):
-            raise SemanticError( self.location, f"{self.__class__.__name__} requires the X coordinate to be a number.")
+        if x_type == 'str' or y_type == 'str':
+            raise SemanticError( self.location, f"{self.__class__.__name__} requires the Location to be a tuple of numbers.")
         
         if self.__class__.__name__ == 'See':
             return 'int'
